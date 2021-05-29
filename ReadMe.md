@@ -3,7 +3,5 @@
 ## Grupo 119
 
 André Martins
-
 Daniel Faria
-
 Teresa Fortes
