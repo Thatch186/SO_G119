@@ -7,7 +7,7 @@ CFLAGS += -Wno-unused-command-line-argument
 #Directories
 SRCDIR := src
 INCDIR := includes
-BLDDIR := build
+BLDDIR := obj
 PROGRAM := executable
 WARNINGFILE := warnings.txt
 LIXO := $(BLDDIR) program $(WARNINGFILE)
