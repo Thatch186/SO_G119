@@ -1,13 +1,4 @@
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
-
-#define MAX_BUFF_SIZE 1024
+#include "../includes/server.h"
 
 void leitura(char *fifo){
 
@@ -26,17 +17,4 @@ void leitura(char *fifo){
             perror("write");
         }
     }
-}
-
-int main(){
-
-    mkfifo("fifo",0666);
-
-    if(!fork()){
-        execlp("CLIENTE","CLIENTE", NULL);
-        _exit(0);
-    }
-    //cliente("fifo");
-    leitura("fifo");
-    return 0;
 }

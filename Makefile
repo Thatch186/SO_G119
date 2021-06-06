@@ -1,37 +1,21 @@
-#variables
-SHELL=bash
-CC = gcc #Compiler
-CFLAGS = -g -O2 -Wall #Compilation Flags
-CFLAGS += -Wno-unused-command-line-argument
+all: server client
 
-#Directories
-SRCDIR := src
-INCDIR := includes
-BLDDIR := obj
-PROGRAM := executable
-WARNINGFILE := warnings.txt
-LIXO := $(BLDDIR) program $(WARNINGFILE)
-INCLUDES := -I $(INCDIR)
+server: bin/aurrasd
 
-#
-SOURCES := $(wildcard $(SRCDIR)/*.c)
-OBJECTS := $(patsubst $(SRCDIR)/%.c,$(BLDDIR)/%.o,$(SOURCES))
+client: bin/aurras
 
-vpath %.c $(SRCDIR)
+bin/aurrasd: obj/aurrasd.o
+	gcc -g obj/aurrasd.o -o bin/aurrasd
 
-.DEFAULT_GOAL = program
+obj/aurrasd.o: src/aurrasd.c
+	gcc -Wall -g -c src/aurrasd.c obj/aurrasd.o
 
-$(BLDDIR)/%.o: %.c
-	@$(CC) -c $(INCLUDES) $(CFLAGS) $< -o $@ $(LFLAGS) 
-	
-$(PROGRAM): $(OBJECTS)
-	@$(CC) $(INCLUDES) $(CFLAGS) -o program -g $(OBJECTS) $(LFLAGS)
+bin/aurras: obj/aurras.o
+	gcc -g obj/aurras.o -o bin/aurras
 
-program: setup $(PROGRAM)
+obj/aurras.o: src/aurras.c
+	gcc -Wall -g -c src/aurras.c obj/aurras.o
 
-setup:
-	@mkdir -p $(BLDDIR)
-
-.PHONY: clean
 clean:
-	@rm -rf $(LIXO)
+	rm obj/* tmp/* bin/{aurras,aurrasd}
+
