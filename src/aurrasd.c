@@ -9,13 +9,15 @@
 
 #define MAX_BUFF_SIZE 1024
 
-void leitura(char *fifo){
+int main(int argc, char *argv[]){
+
+    mkfifo("tmp/FifoS", 0666);
 
     printf("In server\n");
     int fd, bytes_read;
     char buff[MAX_BUFF_SIZE];
 
-    if((fd=open("fifo", O_RDONLY)) == -1){
+    if((fd=open("tmp/FifoS", O_RDONLY)) == -1){
         perror("open");
     }
     else{
@@ -26,17 +28,6 @@ void leitura(char *fifo){
             perror("write");
         }
     }
-}
-
-int main(){
-
-    mkfifo("fifo",0666);
-
-    if(!fork()){
-        execlp("CLIENTE","CLIENTE", NULL);
-        _exit(0);
-    }
-    //cliente("fifo");
-    leitura("fifo");
     return 0;
 }
+
