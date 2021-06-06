@@ -12,23 +12,22 @@
 
 int  main(int argc, char *agrv[]){
 
-
     printf("[CLIENTE]\n");
     char buff_wr[MAX_BUFF_SIZE];
     char buff_rd[MAX_BUFF_SIZE];
     int bytes_input , bytes_server, fd_fifo_s, fd_fifo_c;
 
-    if((fd_fifo_s = open("tmp/FifoS",O_WRONLY)) == -1){ //pipe escrita
+    if((fd_fifo_s = open("tmp/FifoS",O_WRONLY)) == -1) //pipe escrita
         perror("open");
-    }else{
+    else
         printf("opened fifoS for writing");
-    }
+        
 
-    if((fd_fifo_c = open("tmp/FifoC",O_RDONLY)) == -1){ //pipe leitura
+    if((fd_fifo_c = open("tmp/FifoC",O_RDONLY)) == -1) //pipe leitura
         perror("open");
-    }else{
+    else
         printf("opened fifoC for reading");
-    }
+    
 
     while( (bytes_input = read(0 ,buff_wr ,MAX_BUFF_SIZE)) > 0){  //escreve para o servidor, mas se a primeira letra inserida for c, recebe uma mensagem
         if(write(fd_fifo_s,buff_wr,bytes_input) == -1){

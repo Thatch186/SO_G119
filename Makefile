@@ -17,5 +17,5 @@ obj/aurras.o: src/aurras.c
 	gcc -Wall -g -c src/aurras.c -o obj/aurras.o
 
 clean:
-	rm obj/* tmp/* bin/*
+	rm obj/* tmp/* bin/aurras bin/aurrasd
 
