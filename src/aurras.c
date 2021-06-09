@@ -69,6 +69,8 @@ void exec_status(int fd_s, int fd_c){
     char buff[200];
     while((bytes_lidos = read(fd_c, buff , 200)) > 0){
         escreve(1, buff , bytes_lidos);
+        if(!strcmp(buff,"Completed\n"))
+            break;
     }
 }
 
