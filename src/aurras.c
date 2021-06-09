@@ -40,20 +40,52 @@ void check_if(int bool, char *arg , int fd_s , int fd_c){
     }
 }
 
-void exec_tranforma(int len, char *cmds[],int fd_s){
-    int i=0;
-    for(i=0; i<len; i++){
-        escreve(fd_s, cmds[i] , strlen(cmds[i]));
+char *array_to_string(char *a[], int n){
+    char *new;
+    int i, len=0;
+    for(i=0; i<n; i++)
+        len+=strlen(a[i]);
+    new = malloc(len + n);
+    for(i=0; i<n ; i++){
+        new = strcat(new, a[i]);
+        new = strcat(new, " ");
+    }
+    return new;
+}
+
+void exec_tranform(int len, char *cmds[],int fd_s, int fd_c){
+    char *string = array_to_string(cmds,len);
+    int bytes_lidos;
+    char buff[200];
+    escreve(fd_s, string , strlen(string));
+    while((bytes_lidos = read(fd_c, buff , 200)) > 0){
+        escreve(1, buff , bytes_lidos);
+    }
+}
+
+void exec_status(int fd_s, int fd_c){
+    escreve(fd_s, "status " , 7);
+    int bytes_lidos;
+    char buff[200];
+    while((bytes_lidos = read(fd_c, buff , 200)) > 0){
+        escreve(1, buff , bytes_lidos);
     }
 }
 
 
+//-----------------------------------------------------------------
+
 int  main(int argc, char *argv[]){
 
-
-    printf("[CLIENTE]\n");
     char buff_wr[MAX_BUFF_SIZE];
     char buff_rd[MAX_BUFF_SIZE];
+
+    if(argc == 1){
+        printf("./aurras status\n");
+        printf("./aurras transform input-filename output-filename filter-id-1 filter-id-2 ...\n");
+        return -1;
+    }
+
     int status = argc > 1 && !strcmp(argv[1],"status");
     int transform = argc > 1 && !strcmp(argv[1],"transform");
 
@@ -62,18 +94,12 @@ int  main(int argc, char *argv[]){
     fd_fifo_s = open_fifo("tmp/FifoS",O_WRONLY); //pipe escrita
     
     fd_fifo_c = open_fifo("tmp/FifoC",O_RDONLY); //pipe leitura
-     
-    check_if(status, "0" , fd_fifo_s , fd_fifo_c);
-    check_if(transform, "1" , fd_fifo_s , fd_fifo_c);
-    
-    while((bytes_input = read(0 ,buff_wr ,MAX_BUFF_SIZE)) > 0){  //escreve para o servidor, mas se a primeira letra inserida for c, recebe uma mensagem
-        
-        escreve(fd_fifo_s, buff_wr, bytes_input);
 
-        if((bytes_server= read(fd_fifo_c, buff_rd, MAX_BUFF_SIZE)) > 0){
-            escreve(1,buff_rd,bytes_server);
-        }
-        
+    if(status){
+        exec_status(fd_fifo_s, fd_fifo_c);
+    }
+    else if(transform){
+        exec_tranform(argc-1 ,argv+1 ,fd_fifo_s ,fd_fifo_c);
     }
 
     close(fd_fifo_s);

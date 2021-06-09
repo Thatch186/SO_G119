@@ -19,30 +19,10 @@ int open_fifo(char *path , int flag){
     int fd_fifo;
     if((fd_fifo=open(path, flag)) == -1)
         perror("Open");
-    else if (flag)
-        printf("Opened fifo for writing only");
-    else 
-        printf("Opened fifo for reading only");
     return fd_fifo;
 }
 
-void get_status(int fd){
-    escreve(fd,"Status not defined yet\n",23);
-}
 
-void exec_transform(int fd){
-    
-    int status;
-    if(!fork()){
-        escreve(fd, "In fork\n", 8);
-        execl("/bin/aurrasd-filters/aurrasd-echo" , "aurrasd-echo" , "samples/sample-2-miei.m4a" , "output.mp3" , (char *)NULL);
-        _exit(0);
-    }
-    pid_t terminated_pid = wait(&status);
-    escreve(fd, "Returned\n", 9);
-    
-
-}
 
 char **add_to_array(char **array, int array_len , char *line){
     array = realloc(array, array_len+1);
@@ -57,16 +37,44 @@ typedef struct task{
     char **filters;
 }Task;
 
-char **string_to_array(char *line){
-    int i,len=0;
+
+char **string_to_array(char *line , int *len){
+    int i;
     for(i=0; line[i] ; i++)
-        if(line[i]==';')
-            len++;
-    char **comands = malloc(sizeof(char*) * len);
-    for(i=0; i<len ; i++){
-        comands[i] = strdup(strsep(&line , ";"));
+        if(line[i]==' ')
+            (*len)++;
+    char **comands = malloc(sizeof(char*) * (*len));
+    for(i=0; i<(*len) ; i++){
+        comands[i] = strdup(strsep(&line , " "));
     }
     return comands;
+}
+
+void get_status(int fd){
+    escreve(fd,"Status not defined yet\n",23);
+}
+
+void exec_transform(char *args[] , int N , int fd){
+
+    
+    int stdin2 = dup(0);
+    int stdout2 = dup(1);
+    int fd_in = open( args[1] , O_RDONLY ,0666);
+    int fd_out = open( args[2] , O_CREAT | O_TRUNC | O_WRONLY , 0666);
+
+    int res1 = dup2(fd_in, 0);
+    int res2 = dup2(fd_out, 1);
+    int status;
+    
+    if(!fork()){
+        escreve(fd, "In fork\n", 8);
+        execl("bin/aurrasd-filters/aurrasd-echo" , "bin/aurrasd-filters/aurrasd-echo" , (char *)NULL);
+        _exit(0);
+    }
+    pid_t terminated_pid = wait(&status);
+    escreve(fd, "Returned\n", 9);
+    
+
 }
 
 int main(int argc, char *argv[]){
@@ -90,21 +98,23 @@ int main(int argc, char *argv[]){
     fd_aux = open_fifo("tmp/FifoS", O_WRONLY);
     
     
-    while(estado_processo < 2){ //recebe do cliente, mas se a primeira letra recebida for 'c' manda uma mensagem
+    while(1){ 
         
         bytes_read = read(fd_fifo_s ,buff_read ,MAX_BUFF_SIZE);
 
-        buff_read[bytes_read]='\0'; //transform nao estava a funcionar sem isto<
+        int len=0;
+        char **comandos = string_to_array(buff_read, &len);
 
-        if(!strcmp(buff_read, "0")){
+        
+        if(!strcmp(comandos[0] , "status")){
             get_status(fd_fifo_c);
         }
-        if(!strcmp(buff_read, "1")){
-            exec_transform(fd_fifo_c);
+        if(!strcmp(comandos[0], "transform")){
+            exec_transform(comandos, len , fd_fifo_c);
         }
 
-        escreve(1,buff_read,bytes_read);
-        escreve(1,"\n",1);
+        //escreve(1,buff_read,bytes_read);
+        //escreve(1,"\n",1);
 
         if(estado_processo == 0)
             escreve(fd_fifo_c,"Pending...\n",11);
