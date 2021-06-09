@@ -9,46 +9,112 @@
 
 #define MAX_BUFF_SIZE 1024
 
+void escreve(int fd_fifo, char *buff ,int bytes){
+    if(write(fd_fifo,buff,bytes) == -1){
+        perror("write in");
+    }
+}
+
+int open_fifo(char *path , int flag){
+    int fd_fifo;
+    if((fd_fifo=open(path, flag)) == -1)
+        perror("Open");
+    else if (flag)
+        printf("Opened fifo for writing only");
+    else 
+        printf("Opened fifo for reading only");
+    return fd_fifo;
+}
+
+void get_status(int fd){
+    escreve(fd,"Status not defined yet\n",23);
+}
+
+void exec_transform(int fd){
+    
+    int status;
+    if(!fork()){
+        escreve(fd, "In fork\n", 8);
+        execl("/bin/aurrasd-filters/aurrasd-echo" , "aurrasd-echo" , "samples/sample-2-miei.m4a" , "output.mp3" , (char *)NULL);
+        _exit(0);
+    }
+    pid_t terminated_pid = wait(&status);
+    escreve(fd, "Returned\n", 9);
+    
+
+}
+
+char **add_to_array(char **array, int array_len , char *line){
+    array = realloc(array, array_len+1);
+    array[array_len]=malloc(strlen(line));
+    array[array_len]=line;
+    return array; 
+}
+
+typedef struct task{
+    int index;
+    int nr_filters;
+    char **filters;
+}Task;
+
+char **string_to_array(char *line){
+    int i,len=0;
+    for(i=0; line[i] ; i++)
+        if(line[i]==';')
+            len++;
+    char **comands = malloc(sizeof(char*) * len);
+    for(i=0; i<len ; i++){
+        comands[i] = strdup(strsep(&line , ";"));
+    }
+    return comands;
+}
+
 int main(int argc, char *argv[]){
 
-    int fd_fifo_s , fd_fifo_c; 
-    int bytes_read , bytes_input;
+    int estado_processo=0;
+    int fd_fifo_s , fd_fifo_c , fd_aux; 
+    int bytes_read ; //bytes_input;
     char buff_read[MAX_BUFF_SIZE];
     char buff_write[MAX_BUFF_SIZE];
-
+    char **comands;
 
     mkfifo("tmp/FifoS", 0666); //Leitura pelo Servidor
     mkfifo("tmp/FifoC", 0666); //Leitura pelo Cliente
 
     printf("[SERVER]\n");
     
+    fd_fifo_s = open_fifo("tmp/FifoS", O_RDONLY);
 
-    if((fd_fifo_s=open("tmp/FifoS", O_RDONLY)) == -1)
-        perror("open1");
-    else
-        printf("Opened fifo for read only");
+    fd_fifo_c = open_fifo("tmp/FifoC", O_WRONLY);
 
+    fd_aux = open_fifo("tmp/FifoS", O_WRONLY);
+    
+    
+    while(estado_processo < 2){ //recebe do cliente, mas se a primeira letra recebida for 'c' manda uma mensagem
+        
+        bytes_read = read(fd_fifo_s ,buff_read ,MAX_BUFF_SIZE);
 
-    if((fd_fifo_c=open("tmp/FifoC", O_WRONLY)) == -1)
-        perror("open2");
-    else
-        printf("Opened fifoC for writing only");
+        buff_read[bytes_read]='\0'; //transform nao estava a funcionar sem isto<
 
-
-    while( (bytes_read = read(fd_fifo_s ,buff_read ,MAX_BUFF_SIZE)) > 0){ //recebe do cliente, mas se a primeira letra recebida for 'c' manda uma mensagem
-        if(write(1,buff_read,bytes_read) == -1)
-            perror("write");
-            
-        if(buff_read[0] == 'c'){ 
-            bytes_input = read(0,buff_write ,MAX_BUFF_SIZE);
-            if(write(fd_fifo_c,buff_write,bytes_input) == -1){
-                perror("write");
-            }
-            //break;
+        if(!strcmp(buff_read, "0")){
+            get_status(fd_fifo_c);
         }
-        bytes_read=0;
-        bytes_input=0;
+        if(!strcmp(buff_read, "1")){
+            exec_transform(fd_fifo_c);
+        }
+
+        escreve(1,buff_read,bytes_read);
+        escreve(1,"\n",1);
+
+        if(estado_processo == 0)
+            escreve(fd_fifo_c,"Pending...\n",11);
+
+        else if(estado_processo ==1)
+            escreve(fd_fifo_c,"Processing...\n",14);
+
+        else escreve(fd_fifo_c,"Completed.\n",11);
     }
+
     return 0;
 }
 
