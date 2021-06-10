@@ -57,7 +57,7 @@ void exec_tranform(int len, char *cmds[],int fd_s, int fd_c){
     while((bytes_lidos = read(fd_c, buff , 200)) > 0){
         escreve(1, buff , bytes_lidos);
         buff[bytes_lidos]='\0';
-        if(!strcmp(buff,"Completed\n")){
+        if(!strcmp(buff,"Completed\n") || !strcmp(buff, "Filters not avaliable, try again\n")){
             break;
         }
     }

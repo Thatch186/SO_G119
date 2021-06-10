@@ -95,14 +95,32 @@ int constroi_filtros(char *file , Filtro **filtros){
 
     return nr_lines;
 }
+
+void clone_filters(Filtro *novo[], Filtro filtros[] , int nr_filters){
+    (*novo) = malloc(sizeof(Filtro) * nr_filters);
+    for(int i=0 ; i<nr_filters ; i++){
+        (*novo)[i] = malloc(sizeof(struct filtro));
+        (*novo)[i]->nick=strdup(filtros[i]->nick);
+        (*novo)[i]->name=strdup(filtros[i]->name);
+        (*novo)[i]->max=filtros[i]->max;
+        (*novo)[i]->running=filtros[i]->running;
+    }
+    return novo;
+}
+
 //---------------- EXECS (TRANSFORM E STATUS) ------------------------
 
 void get_status(int fd){
     escreve(fd,"Status not defined yet\n",23);
 }
 
-int exec_transform(char *args[] ,Filtro filters[], int nr_cmds, int nr_filters , char *filter_path,  int fd){
 
+int exec_transform(char *args[] ,Filtro *filters[], int nr_cmds, int nr_filters , char *filter_path,  int fd){
+
+    Filtro *aux_filters = malloc(sizeof(Filtro *));
+    clone_filters(&aux_filters, (*filters) ,nr_filters);
+
+    int fd_in_init = dup(0);
     int fd_out_init = dup(1);
     int status[nr_cmds-4];
     int fd_in = open( args[2] , O_RDONLY ,0666);
@@ -110,7 +128,7 @@ int exec_transform(char *args[] ,Filtro filters[], int nr_cmds, int nr_filters ,
 
     char **used_filters = malloc(sizeof(char *) * nr_cmds-4);
     int i,j , equals;
-
+    
     for(i=0; i < nr_cmds-4; i++){
         used_filters[i]=strdup(args[i+4]);  //filtros nos argumentos do cliente
     }
@@ -118,13 +136,17 @@ int exec_transform(char *args[] ,Filtro filters[], int nr_cmds, int nr_filters ,
     for(i=0; i< nr_cmds-4; i++){  // para cada nos argumentos:
 
         for(j=0 , equals=0 ; j<nr_filters && !equals ; j++)         //percorremos a lista de filtros até encontrar o filtro
-            equals = !strcmp(filters[j]->nick ,used_filters[i]) ;
+            equals = !strcmp((*filters)[j]->nick ,used_filters[i]);
 
-        if(equals && filters[j-1]->running < filters[j-1]->max){    // e mudamos nos args pelo nome completo, acrescentando o path
+        if(equals && (*filters)[j-1]->running < (*filters)[j-1]->max){    // e mudamos nos args pelo nome completo, acrescentando o path
             free(args[i+4]);
             args[i+4]=malloc(200);
-            sprintf(args[i+4], "%s/%s", filter_path , filters[j-1]->name);
-            filters[j-1]->running++;
+            sprintf(args[i+4], "%s/%s", filter_path , (*filters)[j-1]->name);
+            (*filters)[j-1]->running++;
+        }
+        else{
+            (*filters)=aux_filters;
+            return -1;
         }
     }
 
@@ -133,7 +155,7 @@ int exec_transform(char *args[] ,Filtro filters[], int nr_cmds, int nr_filters ,
     dup2(fd_in, 0); close(fd_in); //redirecionamento
     dup2(fd_out, 1); close(fd_out);
 
-    
+    i=0;
     for(i=0; i<nr_cmds-5; i++){
         if(pipe(p) == -1){
             perror("pipe");
@@ -153,14 +175,26 @@ int exec_transform(char *args[] ,Filtro filters[], int nr_cmds, int nr_filters ,
         }
     }
     if(!fork()){
-
-        execl(args[i+4], args[i+4],(char *)NULL);
+        execl(args[nr_cmds-1], args[nr_cmds-1],(char *)NULL);
         _exit(0);
     }
     else{
-        write(fd, "Completed\n", 11);
+        dup2(1,fd_out_init);
+        dup2(0,fd_in_init);
+
+        wait(&status[nr_cmds-4]);
+        for(i=0; i< nr_cmds-4; i++){  // para cada nos argumentos:
+
+            for(j=0 , equals=0 ; j<nr_filters && !equals ; j++)         //percorremos a lista de filtros até encontrar o filtro
+                equals = !strcmp((*filters)[j]->nick ,used_filters[i]);
+
+            if(equals){    // e mudamos nos args pelo nome completo, acrescentando o path
+                (*filters)[j-1]->running--;
+            }
+        }
     }
-        
+
+    
     return 1;
 }
 //-----------------------------------------------------------------------------
@@ -177,7 +211,7 @@ int main(int argc, char *argv[]){
     //--------------------------------------
 
     
-    int fd_fifo_s , fd_fifo_c , fd_aux; 
+    int fd_fifo_s , fd_fifo_c , fd_aux , i; 
     int bytes_read ; //bytes_input;
     char buff_read[MAX_BUFF_SIZE];
     char buff_write[MAX_BUFF_SIZE];
@@ -197,20 +231,23 @@ int main(int argc, char *argv[]){
     
     while(1){ 
         
-        escreve(fd_fifo_c,"Pending...\n",11);
-
-        bytes_read = read(fd_fifo_s ,buff_read ,MAX_BUFF_SIZE);
-
-        int nr_cmds=0;
-        char **comandos = string_to_array(buff_read, &nr_cmds);
-
         
-        if(!strcmp(comandos[1] , "status")){
-            get_status(fd_fifo_c);
-        }
-        if(!strcmp(comandos[1], "transform")){
-            exec_transform(comandos, filtros , nr_cmds , nr_filters , argv[2] , fd_fifo_c);
-            fd_fifo_c = dup(1);
+        if((bytes_read = read(fd_fifo_s ,buff_read ,MAX_BUFF_SIZE))>0){
+
+            int nr_cmds=0;
+            char **comandos = string_to_array(buff_read, &nr_cmds);
+
+            
+            if(!strcmp(comandos[1] , "status")){
+                get_status(fd_fifo_c);
+            }
+            if(!strcmp(comandos[1], "transform")){
+                int ret = exec_transform(comandos, &filtros , nr_cmds , nr_filters , argv[2] , fd_fifo_c);
+                if(ret==-1)
+                    write(fd_fifo_c, "Filters not avaliable, try again\n", 33);
+                else
+                    write(fd_fifo_c, "Completed\n", 11);
+            }
         }
     }
 
