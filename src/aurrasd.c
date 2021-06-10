@@ -103,7 +103,8 @@ void get_status(int fd){
 
 int exec_transform(char *args[] ,Filtro filters[], int nr_cmds, int nr_filters , char *filter_path,  int fd){
 
-    int status;
+    int fd_out_init = dup(1);
+    int status[nr_cmds-4];
     int fd_in = open( args[2] , O_RDONLY ,0666);
     int fd_out = open( args[3] , O_CREAT | O_TRUNC | O_WRONLY , 0666);
 
@@ -119,7 +120,7 @@ int exec_transform(char *args[] ,Filtro filters[], int nr_cmds, int nr_filters ,
         for(j=0 , equals=0 ; j<nr_filters && !equals ; j++)         //percorremos a lista de filtros até encontrar o filtro
             equals = !strcmp(filters[j]->nick ,used_filters[i]) ;
 
-        if(equals && filters[j-1]->running < filters[j-1]->max){    // e mudamos pelo nome completo, acrescentando o path
+        if(equals && filters[j-1]->running < filters[j-1]->max){    // e mudamos nos args pelo nome completo, acrescentando o path
             free(args[i+4]);
             args[i+4]=malloc(200);
             sprintf(args[i+4], "%s/%s", filter_path , filters[j-1]->name);
@@ -127,21 +128,39 @@ int exec_transform(char *args[] ,Filtro filters[], int nr_cmds, int nr_filters ,
         }
     }
 
-    for(i=0; i<nr_cmds ; i++){
-        printf("%s\n", args[i]);
-    }
+    int p[2]; //pipes
 
-    dup2(fd_in, 0);
-    dup2(fd_out, 1);
+    dup2(fd_in, 0); close(fd_in); //redirecionamento
+    dup2(fd_out, 1); close(fd_out);
+
     
+    for(i=0; i<nr_cmds-5; i++){
+        if(pipe(p) == -1){
+            perror("pipe");
+            return -1;
+        }
+        if(!fork()){
+            close(p[0]); 
+            dup2(p[1],1);
+            close(p[1]);
+            execl(args[i+4], args[i+4],(char *)NULL);
+            _exit(0);
+        }
+        else{
+            close(p[1]);
+            dup2(p[0],0);
+            close(p[0]);
+        }
+    }
     if(!fork()){
-        escreve(fd, "Processing\n", 11);
-        execl(args[4] , args[4] , (char *)NULL);
+
+        execl(args[i+4], args[i+4],(char *)NULL);
         _exit(0);
     }
-    wait(&status);
-    escreve(fd, "Completed\n", 10);
-    
+    else{
+        write(fd, "Completed\n", 11);
+    }
+        
     return 1;
 }
 //-----------------------------------------------------------------------------
@@ -191,6 +210,7 @@ int main(int argc, char *argv[]){
         }
         if(!strcmp(comandos[1], "transform")){
             exec_transform(comandos, filtros , nr_cmds , nr_filters , argv[2] , fd_fifo_c);
+            fd_fifo_c = dup(1);
         }
     }
 

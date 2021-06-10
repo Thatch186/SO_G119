@@ -20,10 +20,6 @@ int open_fifo(char *path , int flag){
     int fd_fifo;
     if((fd_fifo=open(path, flag)) == -1)
         perror("Open");
-    else if (flag)
-        printf("Opened fifo for writing only");
-    else 
-        printf("Opened fifo for reading only");
     return fd_fifo;
 }
 
@@ -60,6 +56,10 @@ void exec_tranform(int len, char *cmds[],int fd_s, int fd_c){
     escreve(fd_s, string , strlen(string));
     while((bytes_lidos = read(fd_c, buff , 200)) > 0){
         escreve(1, buff , bytes_lidos);
+        buff[bytes_lidos]='\0';
+        if(!strcmp(buff,"Completed\n")){
+            break;
+        }
     }
 }
 
@@ -69,8 +69,6 @@ void exec_status(int fd_s, int fd_c){
     char buff[200];
     while((bytes_lidos = read(fd_c, buff , 200)) > 0){
         escreve(1, buff , bytes_lidos);
-        if(!strcmp(buff,"Completed\n"))
-            break;
     }
 }
 
