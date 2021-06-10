@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include<sys/wait.h>
 
 #define MAX_BUFF_SIZE 1024
 
@@ -50,37 +51,13 @@ char **string_to_array(char *line , int *len){
     return comands;
 }
 
-void get_status(int fd){
-    escreve(fd,"Status not defined yet\n",23);
-}
 
-int exec_transform(char *args[] , int N , int fd){
-
-    
-    int stdin2 = dup(0);
-    int stdout2 = dup(1);
-    int fd_in = open( args[1] , O_RDONLY ,0666);
-    int fd_out = open( args[2] , O_CREAT | O_TRUNC | O_WRONLY , 0666);
-
-    int res1 = dup2(fd_in, 0);
-    int res2 = dup2(fd_out, 1);
-    int status;
-    
-    if(!fork()){
-        escreve(fd, "Processing\n", 11);
-        execl("bin/aurrasd-filters/aurrasd-echo" , "bin/aurrasd-filters/aurrasd-echo" , (char *)NULL);
-        _exit(0);
-    }
-    pid_t terminated_pid = wait(&status);
-    escreve(fd, "Completed\n", 10);
-    
-    return 1;
-}
-
+//----------- FILTROS (FICHEIRO CONFIG) --------------------
 typedef struct filtro{
     char *nick;
     char *name;
     int max;
+    int running;
 }*Filtro;
 
 int constroi_filtros(char *file , Filtro **filtros){
@@ -111,36 +88,76 @@ int constroi_filtros(char *file , Filtro **filtros){
             (*filtros)[i]->nick = strdup(strsep(&buffer, " "));
             (*filtros)[i]->name = strdup(strsep(&buffer, " "));
             (*filtros)[i]->max = atoi(buffer);
+            (*filtros)[i]->running = 0;
+            
         }
     }
 
     return nr_lines;
+}
+//---------------- EXECS (TRANSFORM E STATUS) ------------------------
 
-    //return filtros;
-
+void get_status(int fd){
+    escreve(fd,"Status not defined yet\n",23);
 }
 
+int exec_transform(char *args[] ,Filtro filters[], int nr_cmds, int nr_filters , char *filter_path,  int fd){
 
-//--------------------------------------------------------------------
+    int status;
+    int fd_in = open( args[2] , O_RDONLY ,0666);
+    int fd_out = open( args[3] , O_CREAT | O_TRUNC | O_WRONLY , 0666);
+
+    char **used_filters = malloc(sizeof(char *) * nr_cmds-4);
+    int i,j , equals;
+
+    for(i=0; i < nr_cmds-4; i++){
+        used_filters[i]=strdup(args[i+4]);  //filtros nos argumentos do cliente
+    }
+
+    for(i=0; i< nr_cmds-4; i++){  // para cada nos argumentos:
+
+        for(j=0 , equals=0 ; j<nr_filters && !equals ; j++)         //percorremos a lista de filtros até encontrar o filtro
+            equals = !strcmp(filters[j]->nick ,used_filters[i]) ;
+
+        if(equals && filters[j-1]->running < filters[j-1]->max){    // e mudamos pelo nome completo, acrescentando o path
+            free(args[i+4]);
+            args[i+4]=malloc(200);
+            sprintf(args[i+4], "%s/%s", filter_path , filters[j-1]->name);
+            filters[j-1]->running++;
+        }
+    }
+
+    for(i=0; i<nr_cmds ; i++){
+        printf("%s\n", args[i]);
+    }
+
+    dup2(fd_in, 0);
+    dup2(fd_out, 1);
+    
+    if(!fork()){
+        escreve(fd, "Processing\n", 11);
+        execl(args[4] , args[4] , (char *)NULL);
+        _exit(0);
+    }
+    wait(&status);
+    escreve(fd, "Completed\n", 10);
+    
+    return 1;
+}
+//-----------------------------------------------------------------------------
+
+//-------------------   MAIN    --------------------------------------
 int main(int argc, char *argv[]){
     
-    int i;
     argc+=2;
     argv[1] = "etc/aurrasd.conf";
     argv[2] = "bin/aurrasd-filters";
-
-    Filtro *filtros = malloc(sizeof(Filtro *));
+    //---controi filtros a partir da config
+    Filtro *filtros;
     int nr_filters = constroi_filtros(argv[1] , &filtros);
-    //printf("%d\n",nr_filters);
-    
-    /*
-    for(i=0; i<nr_filters; i++){
-        printf("%s ", filtros[i]->nick);
-        printf("%s ", filtros[i]->name);
-        printf("%d\n",filtros[i]->max);
-    }*/
+    //--------------------------------------
 
-    int estado_processo=0;
+    
     int fd_fifo_s , fd_fifo_c , fd_aux; 
     int bytes_read ; //bytes_input;
     char buff_read[MAX_BUFF_SIZE];
@@ -165,15 +182,15 @@ int main(int argc, char *argv[]){
 
         bytes_read = read(fd_fifo_s ,buff_read ,MAX_BUFF_SIZE);
 
-        int len=0;
-        char **comandos = string_to_array(buff_read, &len);
+        int nr_cmds=0;
+        char **comandos = string_to_array(buff_read, &nr_cmds);
 
         
-        if(!strcmp(comandos[0] , "status")){
+        if(!strcmp(comandos[1] , "status")){
             get_status(fd_fifo_c);
         }
-        if(!strcmp(comandos[0], "transform")){
-            exec_transform(comandos, len , fd_fifo_c);
+        if(!strcmp(comandos[1], "transform")){
+            exec_transform(comandos, filtros , nr_cmds , nr_filters , argv[2] , fd_fifo_c);
         }
     }
 

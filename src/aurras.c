@@ -79,8 +79,8 @@ void exec_status(int fd_s, int fd_c){
 
 int  main(int argc, char *argv[]){
 
-    char buff_wr[MAX_BUFF_SIZE];
-    char buff_rd[MAX_BUFF_SIZE];
+    //char buff_wr[MAX_BUFF_SIZE];
+    //char buff_rd[MAX_BUFF_SIZE];
 
     if(argc == 1){
         printf("./aurras status\n");
@@ -91,7 +91,7 @@ int  main(int argc, char *argv[]){
     int status = argc > 1 && !strcmp(argv[1],"status");
     int transform = argc > 1 && !strcmp(argv[1],"transform");
 
-    int bytes_input , bytes_server, fd_fifo_s, fd_fifo_c;
+    int  fd_fifo_s, fd_fifo_c;
 
     fd_fifo_s = open_fifo("tmp/FifoS",O_WRONLY); //pipe escrita
     
@@ -101,7 +101,7 @@ int  main(int argc, char *argv[]){
         exec_status(fd_fifo_s, fd_fifo_c);
     }
     else if(transform){
-        exec_tranform(argc-1 ,argv+1 ,fd_fifo_s ,fd_fifo_c);
+        exec_tranform(argc ,argv ,fd_fifo_s ,fd_fifo_c);
     }
 
     close(fd_fifo_s);
