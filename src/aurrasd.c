@@ -32,13 +32,6 @@ char **add_to_array(char **array, int array_len , char *line){
     return array; 
 }
 
-typedef struct task{
-    int index;
-    int nr_filters;
-    char **filters;
-}Task;
-
-
 char **string_to_array(char *line , int *len){
     int i;
     for(i=0; line[i] ; i++)
@@ -108,54 +101,28 @@ void clone_filters(Filtro *novo[], Filtro filtros[] , int nr_filters){
     return novo;
 }
 
-//---------------- EXECS (TRANSFORM E STATUS) ------------------------
+//---------------- TRANSFORM  ------------------------
 
-void get_status(int fd){
-    escreve(fd,"Status not defined yet\n",23);
+int not_max(Filtro f){
+    return (f->running < f->max) ? 1 : 0;
 }
 
+char *add_path(char *arg, char *path , char *f_name){ //adiciona o path ao argumento
+    free(arg);
+    arg=malloc(200);
+    sprintf(arg, "%s/%s", path , f_name);
+    return arg;
+}
 
-int exec_transform(char *args[] ,Filtro *filters[], int nr_cmds, int nr_filters , char *filter_path,  int fd){
-
-    Filtro *aux_filters = malloc(sizeof(Filtro *));
-    clone_filters(&aux_filters, (*filters) ,nr_filters);
-
-    int fd_in_init = dup(0);
-    int fd_out_init = dup(1);
-    int status[nr_cmds-4];
-    int fd_in = open( args[2] , O_RDONLY ,0666);
-    int fd_out = open( args[3] , O_CREAT | O_TRUNC | O_WRONLY , 0666);
-
-    char **used_filters = malloc(sizeof(char *) * nr_cmds-4);
-    int i,j , equals;
-    
-    for(i=0; i < nr_cmds-4; i++){
-        used_filters[i]=strdup(args[i+4]);  //filtros nos argumentos do cliente
-    }
-
-    for(i=0; i< nr_cmds-4; i++){  // para cada nos argumentos:
-
-        for(j=0 , equals=0 ; j<nr_filters && !equals ; j++)         //percorremos a lista de filtros até encontrar o filtro
-            equals = !strcmp((*filters)[j]->nick ,used_filters[i]);
-
-        if(equals && (*filters)[j-1]->running < (*filters)[j-1]->max){    // e mudamos nos args pelo nome completo, acrescentando o path
-            free(args[i+4]);
-            args[i+4]=malloc(200);
-            sprintf(args[i+4], "%s/%s", filter_path , (*filters)[j-1]->name);
-            (*filters)[j-1]->running++;
-        }
-        else{
-            (*filters)=aux_filters;
-            return -1;
-        }
-    }
-
-    int p[2]; //pipes
-
+void redirecionamento(int fd_in, int fd_out){
     dup2(fd_in, 0); close(fd_in); //redirecionamento
     dup2(fd_out, 1); close(fd_out);
+}
 
-    i=0;
+/*void executa(char *args[], int nr_cmds, Filtro *filters[] , char *used_filters[],int nr_filters){
+    int i ,j , equals , p[2];
+    int status[nr_cmds-4];
+
     for(i=0; i<nr_cmds-5; i++){
         if(pipe(p) == -1){
             perror("pipe");
@@ -179,8 +146,6 @@ int exec_transform(char *args[] ,Filtro *filters[], int nr_cmds, int nr_filters 
         _exit(0);
     }
     else{
-        dup2(1,fd_out_init);
-        dup2(0,fd_in_init);
 
         wait(&status[nr_cmds-4]);
         for(i=0; i< nr_cmds-4; i++){  // para cada nos argumentos:
@@ -193,24 +158,131 @@ int exec_transform(char *args[] ,Filtro *filters[], int nr_cmds, int nr_filters 
             }
         }
     }
+}*/
 
+int exec_transform(char *args[] ,Filtro *filters[], int nr_cmds, int nr_filters , char *filter_path,  int fd){
+
+    Filtro *aux_filters = malloc(sizeof(Filtro *));
+    clone_filters(&aux_filters, (*filters) ,nr_filters); //estrutura de segurança caso os filtros introduzidos estejam em quantidades erradas
+
+    int fd_in_init = dup(0) , fd_out_init = dup(1); //guardar o stdin e stdout inicial
+    int fd_in = open( args[2] , O_RDONLY ,0666); //abre o ficheiro de input (sample)
+    int fd_out = open( args[3] , O_CREAT | O_TRUNC | O_WRONLY , 0666); // sabre o ficheiro de output (.mp3)
+    int p[2] , status[nr_cmds-4]; //pipe e status
+
+    char **used_filters = malloc(sizeof(char *) * nr_cmds-4);
+    int i,j , equals;
     
+    for(i=0; i < nr_cmds-4; i++){
+        used_filters[i]=strdup(args[i+4]);  //filtros nos argumentos do cliente
+    }
+
+    for(i=0; i< nr_cmds-4; i++){  // para cada nos argumentos:
+
+        for(j=0 , equals=0 ; j<nr_filters && !equals ; j++)         //percorremos a lista de filtros até encontrar o filtro
+            equals = !strcmp((*filters)[j]->nick ,used_filters[i]);
+
+        if(equals && not_max((*filters)[j-1])){    // e mudamos nos args pelo nome completo, acrescentando o path
+            args[i+4] = add_path(args[i+4], filter_path, (*filters)[j-1]->name);
+            (*filters)[j-1]->running++;
+        }
+        else{
+            (*filters)=aux_filters;
+            return -1;
+        }
+    }
+
+    redirecionamento(fd_in, fd_out);
+    
+    for(i=0; i<nr_cmds-5; i++){
+        if(pipe(p) == -1){
+            perror("pipe");
+            return -1;
+        }
+        if(!fork()){
+            close(p[0]); 
+            dup2(p[1],1);
+            close(p[1]);
+            execl(args[i+4], args[i+4],(char *)NULL);
+            _exit(0);
+        }
+        else{
+            close(p[1]);
+            dup2(p[0],0);
+            close(p[0]);
+            wait(&status[i]);
+        }
+    }
+    if(!fork()){
+        execl(args[nr_cmds-1], args[nr_cmds-1],(char *)NULL);
+        _exit(0);
+    }
+    else{
+        wait(&status[nr_cmds-4]);
+        dup2(1,fd_out_init);
+        dup2(0,fd_in_init);
+
+        for(i=0; i< nr_cmds-4; i++){  
+                                                                        // para cada nos argumentos:
+            for(j=0 , equals=0 ; j<nr_filters && !equals ; j++)         // percorremos a lista de filtros até encontrar o filtro
+                equals = !strcmp((*filters)[j]->nick ,used_filters[i]); // e decrementamos o seu uso dos filtros
+
+            if(equals){    
+                (*filters)[j-1]->running--;
+            }
+        }
+    }
+    //executa( args, nr_cmds, &filters , &used_filters , nr_filters);
     return 1;
 }
-//-----------------------------------------------------------------------------
+//_________________________________________________________________________
+//
+//_________________  STATUS ______________________________________________
 
+typedef struct task{
+    int index;
+    char *cmd;
+}*Task;
+
+Task create_task(int index , char *line){
+    Task new = malloc(sizeof(struct task));
+    new->cmd=strdup(line);
+    new->index=index;
+}
+
+void add_task(Task *tasks[],int nr_tasks, Task new){
+    (*tasks) = realloc((*tasks), sizeof(tasks) + sizeof(struct task));
+    (*tasks)[nr_tasks] = create_task(new->index , new->cmd);
+}
+
+void get_status(Task tasks[], int nr_tasks, int fd){
+    int i;
+    
+    for(i=0; i<nr_tasks ; i++){
+        char buff[200];
+        sprintf(buff, "task #%02d: %s \n",i , tasks[i]->cmd);
+        escreve(fd, buff , strlen(buff));
+    }
+}
+
+
+//________________________________________________________________________
 //-------------------   MAIN    --------------------------------------
 int main(int argc, char *argv[]){
     
     argc+=2;
     argv[1] = "etc/aurrasd.conf";
     argv[2] = "bin/aurrasd-filters";
-    //---controi filtros a partir da config
+
+    //---constroi filtros a partir da config
     Filtro *filtros;
     int nr_filters = constroi_filtros(argv[1] , &filtros);
     //--------------------------------------
 
+    Task *tasks = malloc(sizeof(Task *));
+    int nr_tasks = 0;
     
+    //-------------------------------------
     int fd_fifo_s , fd_fifo_c , fd_aux , i; 
     int bytes_read ; //bytes_input;
     char buff_read[MAX_BUFF_SIZE];
@@ -234,12 +306,16 @@ int main(int argc, char *argv[]){
         
         if((bytes_read = read(fd_fifo_s ,buff_read ,MAX_BUFF_SIZE))>0){
 
+            Task new = create_task(nr_tasks, buff_read);
+            add_task(&tasks, nr_tasks ,new);
+            nr_tasks++;
+            
             int nr_cmds=0;
             char **comandos = string_to_array(buff_read, &nr_cmds);
 
             
             if(!strcmp(comandos[1] , "status")){
-                get_status(fd_fifo_c);
+                get_status(tasks, nr_tasks, fd_fifo_c);
             }
             if(!strcmp(comandos[1], "transform")){
                 int ret = exec_transform(comandos, &filtros , nr_cmds , nr_filters , argv[2] , fd_fifo_c);
@@ -249,6 +325,7 @@ int main(int argc, char *argv[]){
                     write(fd_fifo_c, "Completed\n", 11);
             }
         }
+        i++;
     }
 
     return 0;
