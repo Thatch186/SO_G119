@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 
 #define MAX_BUFF_SIZE 1024
 
@@ -49,18 +50,16 @@ char *array_to_string(char *a[], int n){
     return new;
 }
 
-void exec_tranform(int len, char *cmds[],int fd_s, int fd_c){
+void exec_tranform(int len, char *cmds[],int fd_s , int pid){
     char *string = array_to_string(cmds,len);
     int bytes_lidos;
-    char buff[200];
-    escreve(fd_s, string , strlen(string));
-    while((bytes_lidos = read(fd_c, buff , 200)) > 0){
-        escreve(1, buff , bytes_lidos);
-        buff[bytes_lidos]='\0';
-        if(!strcmp(buff,"Completed\n") || !strcmp(buff, "Filters not avaliable, try again\n")){
-            break;
-        }
-    }
+    char buff[1024];
+    sprintf(buff, "%d %s",pid, string);
+    escreve(fd_s, buff , strlen(buff));
+    printf("Pending\n");
+    pause();
+    pause();
+    escreve(fd_s, "decrementa ", 11);
 }
 
 void exec_status(int len, char *cmds[],int fd_s, int fd_c){
@@ -68,13 +67,25 @@ void exec_status(int len, char *cmds[],int fd_s, int fd_c){
     int bytes_lidos;
     char buff[200];
     escreve(fd_s, string , strlen(string));
-    while((bytes_lidos = read(fd_c, buff , 200)) > 0){
+    while((bytes_lidos = read(fd_c, buff , 200))){
         escreve(1, buff , bytes_lidos);
-        buff[bytes_lidos]='\0';
     }
 }
 
+//--------------------- SIGNALS------------------------------------
 
+void sig_processing(){
+    printf("Processing\n");
+}
+
+void sig_completed(){
+    printf("Completed\n");
+}
+
+void sig_quit(){
+    printf("ERRO: Os filtros Introduzidos são inválidos\n");
+    kill(getpid(), SIGINT);
+}
 //-----------------------------------------------------------------
 
 int  main(int argc, char *argv[]){
@@ -88,6 +99,7 @@ int  main(int argc, char *argv[]){
         return -1;
     }
 
+    int pid = getpid();
     int status = argc > 1 && !strcmp(argv[1],"status");
     int transform = argc > 1 && !strcmp(argv[1],"transform");
 
@@ -96,12 +108,25 @@ int  main(int argc, char *argv[]){
     fd_fifo_s = open_fifo("tmp/FifoS",O_WRONLY); //pipe escrita
     
     fd_fifo_c = open_fifo("tmp/FifoC",O_RDONLY); //pipe leitura
+    
+    //------SIGNALS-----------
+    if(signal(SIGUSR1, sig_processing)  == SIG_ERR){
+        perror("SIGUSR1 failed");
+    }
 
+    if(signal(SIGUSR2, sig_completed) == SIG_ERR){
+        perror("SIGUSR2 failed");
+    }
+    if(signal(SIGQUIT, sig_quit) == SIG_ERR){
+        perror("SIGQUIT failed");
+    }
+
+    //--------------------------------------
     if(status){
         exec_status(argc ,argv ,fd_fifo_s ,fd_fifo_c);
     }
     else if(transform){
-        exec_tranform(argc ,argv ,fd_fifo_s ,fd_fifo_c);
+        exec_tranform(argc ,argv ,fd_fifo_s , pid);
     }
 
     close(fd_fifo_s);
