@@ -62,11 +62,12 @@ void exec_tranform(int len, char *cmds[],int fd_s , int pid){
     escreve(fd_s, "decrementa ", 11);
 }
 
-void exec_status(int len, char *cmds[],int fd_s, int fd_c){
+void exec_status(int len, char *cmds[],int fd_s, int fd_c , int pid){
     char *string = array_to_string(cmds,len);
     int bytes_lidos;
-    char buff[200];
-    escreve(fd_s, string , strlen(string));
+    char buff[1024];
+    sprintf(buff, "%d %s",pid, string);
+    escreve(fd_s, buff , strlen(buff));
     while((bytes_lidos = read(fd_c, buff , 200))){
         escreve(1, buff , bytes_lidos);
     }
@@ -123,7 +124,7 @@ int  main(int argc, char *argv[]){
 
     //--------------------------------------
     if(status){
-        exec_status(argc ,argv ,fd_fifo_s ,fd_fifo_c);
+        exec_status(argc ,argv ,fd_fifo_s ,fd_fifo_c, pid);
     }
     else if(transform){
         exec_tranform(argc ,argv ,fd_fifo_s , pid);
