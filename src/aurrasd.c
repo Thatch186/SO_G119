@@ -224,8 +224,8 @@ void exec_transform(char *args[] ,Filtro *filters[], int nr_cmds, int nr_filtros
 
     int fd_in = open( args[2] , O_RDONLY ,0666); //abre o ficheiro de input (sample)
     int fd_out = open( args[3] , O_CREAT | O_TRUNC | O_WRONLY , 0666); // sabre o ficheiro de output (.mp3)
-    int p[2] , status[nr_cmds-4]; //pipe e status
-
+    int p[2] , status; //pipe e status
+    pid_t fork_pid;
     int i,j , equals;
 
     for(i=0; i< nr_cmds-4; i++){  // para cada nos argumentos:
@@ -238,8 +238,6 @@ void exec_transform(char *args[] ,Filtro *filters[], int nr_cmds, int nr_filtros
         }
     }
 
-    //for(i=0; i<nr_cmds ; i++)
-        //printf("%s\n",args[i]);
 
     redirecionamento(fd_in, fd_out);
     
@@ -259,22 +257,27 @@ void exec_transform(char *args[] ,Filtro *filters[], int nr_cmds, int nr_filtros
             close(p[1]);
             dup2(p[0],0);
             close(p[0]);
-            wait(&status[i]);
+            //wait(&status[i]);
         }
     }
-    if(!fork()){
+    if((fork_pid=fork())==0){
         execl(args[nr_cmds-1], args[nr_cmds-1],(char *)NULL);
         _exit(0);
     }
     else{
-        wait(&status[nr_cmds-4]);
-    
+        waitpid(fork_pid, &status, 0);
+        if(!WIFEXITED(status)){
+            perror("BAD EXIT");
+        }
     }
 }
 //_________________________________________________________________________
 //
 //_________________  STATUS ______________________________________________
 
+void sig_term_handler(){
+    
+}
 
 Task create_task(int index , char *line){
     Task new = malloc(sizeof(struct task));
@@ -358,6 +361,8 @@ int main(int argc, char *argv[]){
     int process_index = 0;
     int *to_decrement=malloc(sizeof(int)*1024);
     int nr_to_decrement=0;
+    pid_t terminated_status;
+    int status;
 
     for(i=0; i<1024; i++) tasks[i] = NULL;
     for(i=0; i<1024; i++) to_decrement[i] = 0;
@@ -369,6 +374,10 @@ int main(int argc, char *argv[]){
     
     fd_fifo_s = open_fifo("tmp/FifoS", O_RDONLY);
     fd_aux = open_fifo("tmp/FifoS", O_WRONLY);
+
+    if(signal(SIGTERM, sig_term_handler) == SIG_ERR){
+        perror("SIGTERM failed");
+    }
     
     while(1){ 
         
@@ -420,10 +429,22 @@ int main(int argc, char *argv[]){
                         inc_filters(&filtros, nr_filtros, comandos, nr_cmds);
 
                     if(!fork()){
-                        exec_transform(comandos, &filtros , nr_cmds , nr_filtros , argv[2]);
-                        kill(pid,SIGUSR2);
-                        strsep(&buff_read," ");
-                        _exit(0);
+                        pid_t exec_pid = fork();
+                        if(exec_pid == 0){
+                            exec_transform(comandos, &filtros , nr_cmds , nr_filtros , argv[2]);
+                            _exit(0);
+                        }
+                        else{
+                            terminated_status = waitpid(exec_pid, &status, 0);
+                            if(WIFEXITED(status)){
+                                kill(pid,SIGUSR2);
+                                //strsep(&buff_read," ");
+                            }
+                            else{
+                                perror("BAD EXIT");
+                            }
+                            _exit(0);
+                        }   
                     }                                              
                 }                                                       
                 else if(validos == 2){
