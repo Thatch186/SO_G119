@@ -52,7 +52,6 @@ char *array_to_string(char *a[], int n){
 
 void exec_tranform(int len, char *cmds[],int fd_s , int pid){
     char *string = array_to_string(cmds,len);
-    int bytes_lidos;
     char buff[1024];
     sprintf(buff, "%d %s",pid, string);
     escreve(fd_s, buff , strlen(buff));
@@ -62,15 +61,16 @@ void exec_tranform(int len, char *cmds[],int fd_s , int pid){
     escreve(fd_s, "decrementa ", 11);
 }
 
-void exec_status(int len, char *cmds[],int fd_s, int fd_c , int pid){
+void exec_status(int len, char *cmds[],int fd_s){
     char *string = array_to_string(cmds,len);
     int bytes_lidos;
     char buff[1024];
-    sprintf(buff, "%d %s",pid, string);
-    escreve(fd_s, buff , strlen(buff));
-    while((bytes_lidos = read(fd_c, buff , 200))){
+    escreve(fd_s, string , strlen(string));
+    int fd_c = open_fifo("tmp/FifoC",O_RDONLY); //pipe leitura
+    while((bytes_lidos = read(fd_c, buff , 200))>0){
         escreve(1, buff , bytes_lidos);
     }
+    close(fd_c);
 }
 
 //--------------------- SIGNALS------------------------------------
@@ -104,11 +104,10 @@ int  main(int argc, char *argv[]){
     int status = argc > 1 && !strcmp(argv[1],"status");
     int transform = argc > 1 && !strcmp(argv[1],"transform");
 
-    int  fd_fifo_s, fd_fifo_c;
+    int  fd_fifo_s;
 
     fd_fifo_s = open_fifo("tmp/FifoS",O_WRONLY); //pipe escrita
     
-    fd_fifo_c = open_fifo("tmp/FifoC",O_RDONLY); //pipe leitura
     
     //------SIGNALS-----------
     if(signal(SIGUSR1, sig_processing)  == SIG_ERR){
@@ -124,14 +123,14 @@ int  main(int argc, char *argv[]){
 
     //--------------------------------------
     if(status){
-        exec_status(argc ,argv ,fd_fifo_s ,fd_fifo_c, pid);
+        exec_status(argc ,argv ,fd_fifo_s);
     }
     else if(transform){
         exec_tranform(argc ,argv ,fd_fifo_s , pid);
     }
 
     close(fd_fifo_s);
-    close(fd_fifo_c);
+    //close(fd_fifo_c);
 
     return 0; 
 }

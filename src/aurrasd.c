@@ -132,12 +132,8 @@ int filtros_validos(Filtro filters[], int nr_filtros , char *args[] ,int nr_cmds
 
     int i,j , equals , valid=1 ;
 
-
-    //for(i=0; i<nr_cmds; i++)
-        //printf("%s\n",args[i]);
-
     for(i=0; i<nr_cmds-4 && valid; i++){
-        for(j=0 , equals=0 ; j<nr_filtros && !equals ; j++)         //percorre os argumentos e verifica se estes são inválidos
+        for(j=0 , equals=0 ; j<len && !equals ; j++)         //percorre os argumentos e verifica se estes são inválidos
             equals = !strcmp(filtro_args[j]->nick ,args[i+4]);
         if(equals){
             filtro_args[j-1]->running++;
@@ -179,7 +175,7 @@ void inc_filters(Filtro *filters[], int nr_filtros , char *args[] ,int nr_cmds){
     }
 }
 
-void dec_filters(Filtro *filters[], int nr_filtros ,int **to_decrement, Task *tasks[], int *nr_to_dec, int **nr_tasks){
+void dec_filters(Filtro *filters[], int nr_filtros ,int **to_decrement, Task *tasks[], int *nr_to_dec, int *nr_tasks){
 
     int i,j ,k ,nr_args, equals;
     char **args=malloc(sizeof(char **));
@@ -294,21 +290,12 @@ void add_task(Task *tasks[],int *nr_tasks, Task new, int index){
 }
 
 void remove_task(Task *tasks[],int *nr_tasks, int index){
-    /*int i,j;
-    /*for(i=0; i<(*nr_tasks) && (*tasks)[i]->index != index ; i++);
-    if(i<(*nr_tasks)){
-        for(j=i ; j<(*nr_tasks)-1; j++){
-            (*tasks)[j]->cmd = strdup((*tasks)[j+1]->cmd);
-            (*tasks)[j]->index = (*tasks)[j+1]->index;
-        }
-        if((*nr_tasks)>0){
-            free((*tasks)[*nr_tasks -1]->cmd);
-            free((*tasks)[*nr_tasks -1]->index);
-            (*nr_tasks)--;
-        }
-    }*/
-    (*tasks)[index]=NULL;
-    (*nr_tasks)--;
+
+    if((*tasks)[index] != NULL){
+        free((*tasks)[index]->cmd);
+        (*tasks)[index]=NULL;
+        (*nr_tasks)--;
+    }
 }
 
 void get_status(Task tasks[], Filtro filters[],int nr_tasks, int nr_filtros, int fd , int pid){
@@ -357,7 +344,6 @@ int main(int argc, char *argv[]){
     int nr_filtros = constroi_filtros(argv[1] , &filtros);
     int validos;
 
-    Filtro *aux;
     //--------------------------------------
 
     Task *tasks = malloc(sizeof(Task )*1024);
@@ -365,11 +351,9 @@ int main(int argc, char *argv[]){
     int nr_tasks = 0;
     
     //-------------------------------------
-    int fd_fifo_s , fd_fifo_c , fd_aux , i=0,j ,status ; 
+    int fd_fifo_s , fd_fifo_c , fd_aux , i=0,j; 
     int bytes_read ; //bytes_input;
     char **queue = malloc(sizeof(char **));
-    char **aux_cmds = malloc(sizeof(char **));
-    int nr_cmds_aux=0;
     int queue_size = 0;
     int process_index = 0;
     int *to_decrement=malloc(sizeof(int)*1024);
@@ -384,7 +368,6 @@ int main(int argc, char *argv[]){
     printf("[SERVER]\n");
     
     fd_fifo_s = open_fifo("tmp/FifoS", O_RDONLY);
-    fd_fifo_c = open_fifo("tmp/FifoC", O_WRONLY);
     fd_aux = open_fifo("tmp/FifoS", O_WRONLY);
     
     while(1){ 
@@ -392,24 +375,19 @@ int main(int argc, char *argv[]){
         char *buff_read = malloc(MAX_BUFF_SIZE);
         if((bytes_read = read(fd_fifo_s ,buff_read ,MAX_BUFF_SIZE))>0 || (queue_size>0) ){
             
-           
             int nr_cmds=0;
             char **comandos = string_to_array(buff_read, &nr_cmds);
             
-            //printf("%s\n",comandos[0]);
-            if(!strcmp(comandos[0], "decrementa")){//!strcmp(comandos[0], "decrementa"
+            if(!strcmp(comandos[0], "decrementa")){
                 dec_filters(&filtros, nr_filtros, &to_decrement , &tasks , &nr_to_decrement, &nr_tasks);
-                //remove_task(&tasks, &nr_tasks, process_index-1);
             }
-
-            
+ 
             if(queue_size){
                 
-                //queue = add_queue(buff_read, queue , queue_size);
-                //queue_size++;
+                queue = add_queue(buff_read, queue , queue_size);
+                queue_size++;
                 strcpy(buff_read,queue[0]);
-                //printf("%s\n",buff_read);
-                for(j=0; j<queue_size-1; j++){                  //Mover os elementos para a esquerda
+                for(j=0; j<queue_size-1; j++){                  
                     queue[j]=strdup(queue[j+1]);
                 }
                 free(queue[--queue_size]);
@@ -417,26 +395,12 @@ int main(int argc, char *argv[]){
                 comandos = string_to_array(buff_read, &nr_cmds);
             }
             
-;           //for(i=0; i<nr_cmds; i++) printf("# %s\n",comandos[i]);
-            //printf("BUFF: %s\n",buff_read);
-            //for(i=0; i<nr_filtros ; i++) printf("f %d\n",filtros[i]->running);
-            
-            //printf("%s\n",comandos[0]);
-            if(!strcmp(comandos[0], "decrementa")){//!strcmp(comandos[0], "decrementa"
-                dec_filters(&filtros, nr_filtros, &to_decrement , &tasks , &nr_to_decrement, &nr_tasks);
-                //remove_task(&tasks, &nr_tasks, process_index-1);
-            }
+            if(nr_cmds > 1 && !strcmp(comandos[1] , "status")){
 
-            if(nr_cmds > 1 && !strcmp(comandos[2] , "status")){
-
-                int pid = atoi(comandos[0]);
-                comandos++; //avança o array
-                nr_cmds--;
-
+                fd_fifo_c = open_fifo("tmp/FifoC", O_WRONLY);
                 get_status(tasks, filtros, nr_tasks, nr_filtros, fd_fifo_c, getpid());
-                sleep(0.5);
-                kill(pid, SIGINT);
-        
+                close(fd_fifo_c);
+
             }
             if(nr_cmds > 2 && !strcmp(comandos[2], "transform")){
                 
@@ -460,21 +424,11 @@ int main(int argc, char *argv[]){
                         kill(pid,SIGUSR2);
                         strsep(&buff_read," ");
                         _exit(0);
-                    }
-                    else{
-                        strsep(&buff_read," ");
-                        aux_cmds = clone_str_array(comandos, nr_cmds);  //uma vez que o processo de transformação é passado para o filho
-                        nr_cmds_aux = nr_cmds;                          //é criado um clone dos comandos antes de uma nova iteração do ciclo
-                    }                                                   // para poder decrementar os filtros certos, pois com uma nova iteração,
-                }                                                       // os comandos do processo seriam alterados
+                    }                                              
+                }                                                       
                 else if(validos == 2){
-
                     queue = add_queue(buff_read, queue , queue_size);
                     queue_size++;
-                    //for(i=0; i< queue_size; i++){
-                      //  printf("->%s\n",queue[i]);
-                    //}
-                    //sleep(2);
                 }
                 else{
                     for(i=0; i<nr_cmds; i++){
@@ -486,6 +440,8 @@ int main(int argc, char *argv[]){
         }
     }
 
+    close(fd_fifo_s);
+    close(fd_aux);
     return 0;
 }
 
