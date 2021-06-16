@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -24,19 +23,6 @@ int open_fifo(char *path , int flag){
     return fd_fifo;
 }
 
-void check_if(int bool, char *arg , int fd_s , int fd_c){
-    int bytes;
-    char buff[1024];
-    if(bool){
-        escreve(fd_s, arg , strlen(arg));
-        bytes = read(fd_c , buff , MAX_BUFF_SIZE);
-            escreve(1,buff,bytes);
-        /*if((bytes = read(fd_c, buff, MAX_BUFF_SIZE)) > 0){
-            escreve(1,buff,bytes);
-        }*/
-    }
-}
-
 char *array_to_string(char *a[], int n){
     char *new;
     int i, len=0;
@@ -58,7 +44,7 @@ void exec_tranform(int len, char *cmds[],int fd_s , int pid){
     printf("Pending\n");
     pause();
     pause();
-    escreve(fd_s, "decrementa ", 11);
+    escreve(fd_s, "decrementa aux ", 15);
 }
 
 void exec_status(int len, char *cmds[],int fd_s){
@@ -85,14 +71,11 @@ void sig_completed(){
 
 void sig_quit(){
     printf("ERRO: Os filtros Introduzidos são inválidos\n");
-    kill(getpid(), SIGINT);
+    if( kill(getpid(), SIGINT) == -1) perror("Kill para servidor");
 }
 //-----------------------------------------------------------------
 
 int  main(int argc, char *argv[]){
-
-    //char buff_wr[MAX_BUFF_SIZE];
-    //char buff_rd[MAX_BUFF_SIZE];
 
     if(argc == 1){
         printf("./aurras status\n");
@@ -103,11 +86,9 @@ int  main(int argc, char *argv[]){
     int pid = getpid();
     int status = argc > 1 && !strcmp(argv[1],"status");
     int transform = argc > 1 && !strcmp(argv[1],"transform");
-
     int  fd_fifo_s;
 
     fd_fifo_s = open_fifo("tmp/FifoS",O_WRONLY); //pipe escrita
-    
     
     //------SIGNALS-----------
     if(signal(SIGUSR1, sig_processing)  == SIG_ERR){
@@ -120,7 +101,6 @@ int  main(int argc, char *argv[]){
     if(signal(SIGQUIT, sig_quit) == SIG_ERR){
         perror("SIGQUIT failed");
     }
-
     //--------------------------------------
     if(status){
         exec_status(argc ,argv ,fd_fifo_s);
@@ -128,9 +108,7 @@ int  main(int argc, char *argv[]){
     else if(transform){
         exec_tranform(argc ,argv ,fd_fifo_s , pid);
     }
-
     close(fd_fifo_s);
-    //close(fd_fifo_c);
 
     return 0; 
 }
