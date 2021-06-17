@@ -9,7 +9,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 
-#define MAX_BUFF_SIZE 1024
+#define MAX_ARRAY_SIZE 1024
 
 typedef struct task{
     int index;
@@ -23,11 +23,12 @@ typedef struct filtro{
     int running;
 }*Filtro;
 
-
-Task tasks[1024];
+Task *tasks;
 int nr_tasks = 0;
+int task_size = MAX_ARRAY_SIZE;
 int nr_to_decrement=0;
-int to_decrement[1024];
+int *to_decrement;
+int decrement_size = MAX_ARRAY_SIZE;
 
 
 void escreve(int fd_fifo, char *buff ,int bytes){
@@ -117,7 +118,6 @@ int constroi_filtros(char *file , Filtro **filtros){
             
         }
     }
-
     return nr_lines;
 }
 
@@ -195,7 +195,7 @@ void dec_filters(Filtro *filters[], int nr_filtros){
     int i,j ,k ,nr_args, equals;
     char **args=malloc(sizeof(char **));
     
-    for(i=0 ; i<1024 && nr_to_decrement >= 0 ; i++){  
+    for(i=0 ; i<MAX_ARRAY_SIZE && nr_to_decrement > 0 ; i++){  
         
         if( to_decrement[i] != 0){
             //printf("%s %d\n",tasks[i]->cmd, i);
@@ -289,10 +289,22 @@ void exec_transform(char *args[] ,Filtro *filters[], int nr_cmds, int nr_filtros
     }
 }
 
-char ** add_queue(char *line, char *queue[], int size){
+//___________________QUEUE_________________________________________________
+char **add_queue(char *line, char *queue[], int size){
     char **res = (char **)realloc(queue, sizeof(char *) * (size +1));
     res[size] = strdup(line);
     return res;
+}
+
+void add_decrement(int index){
+    int i;
+    if(index > (0.75)*decrement_size){
+        to_decrement = realloc(to_decrement, sizeof(int) * decrement_size*2);
+        for(i=decrement_size; i< decrement_size*2 ; i++) to_decrement[i] = 0;
+        decrement_size*=2;
+    }
+    nr_to_decrement++;
+    to_decrement[index]=1;
 }
 //_________________  TASKS   ______________________________________________
 
@@ -304,7 +316,12 @@ Task create_task(int index , char *line){
 }
 
 void add_task(int index, char *buffer){
-
+    int i;
+    if(index > 0.75 *task_size){
+        tasks = realloc(tasks, sizeof(struct task) * task_size*2);
+        for(i=task_size; i<task_size*2 ; i++) tasks[i]=NULL;
+        task_size*=2;
+    }
     tasks[index] = create_task(index, buffer);
     nr_tasks++;
 }
@@ -321,10 +338,8 @@ void remove_task(int index){
 
 void get_status(Filtro filters[], int nr_filtros, int fd , int pid){
     int i;
-    char buff[1024];
-    char *final=malloc(1024);
-    strcpy(final,"");
-    for(i=0; i<1024 ; i++){
+    char buff[MAX_ARRAY_SIZE];
+    for(i=0; i<task_size ; i++){
         if(tasks[i]!=NULL){
             sprintf(buff, "task #%d: %s \n", tasks[i]->index , tasks[i]->cmd);
             escreve(fd, buff, strlen(buff));
@@ -336,32 +351,36 @@ void get_status(Filtro filters[], int nr_filtros, int fd , int pid){
      }
     sprintf(buff, "pid: %d\n",pid);
     escreve(fd, buff, strlen(buff));
-
-    free(final);
 }
 
+
 //________________________________________________________________________
-//-------------------   MAIN    --------------------------------------
+//___________________________MAIN___________________________________________ 
 int main(int argc, char *argv[]){
     
     argc+=2;
     argv[1] = "etc/aurrasd.conf";
     argv[2] = "bin/aurrasd-filters";
 
-    //---constroi filtros a partir da config
+//__________________________________________
     Filtro *filtros;
     int nr_filtros = constroi_filtros(argv[1] , &filtros);
+//______________________________________________
     int validos ,  i=0,j;
     int fd_fifo_s , fd_fifo_c , fd_aux ;
     int bytes_read ; //bytes_input;
+//_______________________________________________
     char **queue = malloc(sizeof(char **));
-    int queue_size = 0;
+    to_decrement = malloc (sizeof(int) * decrement_size);
+    int in_queue = 0;
     int process_index = 0;
-    pid_t terminated_status, exec_pid;
+    tasks = malloc(sizeof(struct task) * task_size);
+//______________________________________________
+    pid_t exec_pid;
     int status;
 
-    for(i=0; i<1024; i++) tasks[i] = NULL;
-    for(i=0; i<1024; i++) to_decrement[i] = 0;
+    for(i=0; i<task_size; i++) tasks[i] = NULL;
+    for(i=0; i<decrement_size; i++) to_decrement[i] = 0;
 
     mkfifo("tmp/FifoS", 0666); //Leitura pelo Servidor
     mkfifo("tmp/FifoC", 0666); //Leitura pelo Cliente
@@ -371,8 +390,8 @@ int main(int argc, char *argv[]){
     
     while(1){ 
         
-        char *buff_read = malloc(MAX_BUFF_SIZE);
-        if((bytes_read = read(fd_fifo_s ,buff_read ,MAX_BUFF_SIZE))>0 || (queue_size>0) ){
+        char *buff_read = malloc(MAX_ARRAY_SIZE);
+        if((bytes_read = read(fd_fifo_s ,buff_read ,MAX_ARRAY_SIZE))>0 || (in_queue>0) ){
             
             int nr_cmds=0;
             char **comandos = string_to_array(buff_read, &nr_cmds);
@@ -381,15 +400,17 @@ int main(int argc, char *argv[]){
                 dec_filters(&filtros, nr_filtros);
             }
 
-            if(queue_size && strcmp(comandos[1] , "status")){
+            if(in_queue && strcmp(comandos[1] , "status")){
                 
-                queue = add_queue(buff_read, queue , queue_size);
-                queue_size++;
+                if(strcmp(comandos[0], "decrementa") != 0){
+                    queue = add_queue(buff_read, queue , in_queue);
+                    in_queue++;
+                }
                 strcpy(buff_read,queue[0]);
-                for(j=0; j<queue_size-1; j++){                  
+                for(j=0; j<in_queue-1; j++){                  
                     queue[j]=strdup(queue[j+1]);
                 }
-                free(queue[--queue_size]);
+                free(queue[--in_queue]);
                 nr_cmds=0;
                 comandos = string_to_array(buff_read, &nr_cmds);
             }
@@ -410,8 +431,7 @@ int main(int argc, char *argv[]){
                 if((validos = filtros_validos(filtros, nr_filtros, comandos, nr_cmds,argv[1])) == 1){
 
                         add_task(process_index,buff_read);
-                        nr_to_decrement++;
-                        to_decrement[process_index]=1;
+                        add_decrement(process_index);
                         process_index++;
                         if( kill(pid,SIGUSR1) == -1) perror("Kill para cliente");
                         inc_filters(&filtros, nr_filtros, comandos, nr_cmds);
@@ -422,7 +442,7 @@ int main(int argc, char *argv[]){
                             _exit(0);
                         }
                         else{
-                            terminated_status = waitpid(exec_pid, &status, 0);
+                            waitpid(exec_pid, &status, 0);
                             if(WIFEXITED(status)){
                                 if( kill(pid,SIGUSR2) == -1) perror("Kill para cliente");
                             }
@@ -434,8 +454,8 @@ int main(int argc, char *argv[]){
                     }                                              
                 }                                                       
                 else if(validos == 2){
-                    queue = add_queue(buff_read, queue , queue_size);
-                    queue_size++;
+                    queue = add_queue(buff_read, queue , in_queue);
+                    in_queue++;
                 }
                 else{
                     for(i=0; i<nr_cmds; i++) free(comandos[i]);
