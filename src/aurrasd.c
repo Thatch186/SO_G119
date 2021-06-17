@@ -44,26 +44,6 @@ int open_fifo(char *path , int flag){
     return fd_fifo;
 }
 
-char *array_to_string(char *a[], int n){
-    char *new;
-    int i, len=0;
-    for(i=0; i<n; i++)
-        len+=strlen(a[i]);
-    new = malloc(len + n);
-    for(i=0; i<n ; i++){
-        new = strcat(new, a[i]);
-        new = strcat(new, " ");
-    }
-    return new;
-}
-
-char **add_to_array(char **array, int array_len , char *line){
-    array = realloc(array, array_len+1);
-    array[array_len]=malloc(strlen(line));
-    array[array_len]=line;
-    return array; 
-}
-
 char **string_to_array(char *buff , int *len){
     char *line=strdup(buff);
     int i;
@@ -75,13 +55,6 @@ char **string_to_array(char *buff , int *len){
         comands[i] = strdup(strsep(&line , " "));
     }
     return comands;
-}
-
-char  **clone_str_array(char *cmds[] , int nr_cmds){
-    char **novo = malloc(sizeof(char *)* nr_cmds);
-    for(int i=0; i<nr_cmds ; i++)
-        novo[i]=strdup(cmds[i]);
-    return novo;
 }
 
 //_____________________FILTROS__________________________________
@@ -195,7 +168,7 @@ void dec_filters(Filtro *filters[], int nr_filtros){
     int i,j ,k ,nr_args, equals;
     char **args=malloc(sizeof(char **));
     
-    for(i=0 ; i<MAX_ARRAY_SIZE && nr_to_decrement > 0 ; i++){  
+    for(i=0 ; i<decrement_size && nr_to_decrement > 0 ; i++){  
         
         if( to_decrement[i] != 0){
             //printf("%s %d\n",tasks[i]->cmd, i);
@@ -326,14 +299,6 @@ void add_task(int index, char *buffer){
     nr_tasks++;
 }
 
-void remove_task(int index){
-    if(tasks[index] != NULL){
-        free(tasks[index]->cmd);
-        tasks[index]=NULL;
-        nr_tasks--;
-    }
-}
-
 //___________________ STATUS _______________________________________________________
 
 void get_status(Filtro filters[], int nr_filtros, int fd , int pid){
@@ -352,21 +317,14 @@ void get_status(Filtro filters[], int nr_filtros, int fd , int pid){
     sprintf(buff, "pid: %d\n",pid);
     escreve(fd, buff, strlen(buff));
 }
-
-
 //________________________________________________________________________
 //___________________________MAIN___________________________________________ 
 int main(int argc, char *argv[]){
-    
-    argc+=2;
-    argv[1] = "etc/aurrasd.conf";
-    argv[2] = "bin/aurrasd-filters";
 
-//__________________________________________
     Filtro *filtros;
     int nr_filtros = constroi_filtros(argv[1] , &filtros);
 //______________________________________________
-    int validos ,  i=0,j;
+    int validos , i,j;
     int fd_fifo_s , fd_fifo_c , fd_aux ;
     int bytes_read ; //bytes_input;
 //_______________________________________________
@@ -430,11 +388,11 @@ int main(int argc, char *argv[]){
 
                 if((validos = filtros_validos(filtros, nr_filtros, comandos, nr_cmds,argv[1])) == 1){
 
-                        add_task(process_index,buff_read);
-                        add_decrement(process_index);
-                        process_index++;
-                        if( kill(pid,SIGUSR1) == -1) perror("Kill para cliente");
-                        inc_filters(&filtros, nr_filtros, comandos, nr_cmds);
+                    add_task(process_index,buff_read);
+                    add_decrement(process_index);
+                    process_index++;
+                    if( kill(pid,SIGUSR1) == -1) perror("Kill para cliente");
+                    inc_filters(&filtros, nr_filtros, comandos, nr_cmds);
 
                     if(!fork()){
                         if((exec_pid = fork()) == 0){
